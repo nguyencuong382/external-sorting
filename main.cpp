@@ -18,7 +18,8 @@
 using namespace std;
 
 const string TEMP_DIR = "./tmp/";
-const string STR_MAX = "\255";
+const string PREFIX_= "tmp-";
+const string EXT = ".txt";
 
 // ============ Min Heap ============
 
@@ -32,20 +33,36 @@ class Heap {
     int heap_size = 0;
 
 public:
-    Heap(){}
 
+    // build a min heap tree from heap array
     void build();
+
+    // swap two nodes
     void swap(Node &node_1, Node &node_2);
+
+    // heapify the node with given index
     void heapify(int index);
+
+    // add a new node to the heap
     void add(Node &node);
+
+    // get root node
     Node top();
+
+    // delete root node
     void pop();
+
+    // shift down the node with given index
+    void shiftDown(int index);
+
+    // replace root node with new node
     void replaceTop(Node node);
-    void display();
 
     int size() { return heap_size; }
     int left(int index) { return 2 * index + 1; }
     int right(int index) { return 2 * index + 2; }
+
+    ~Heap(){ heap_arr.clear(); }
 };
 
 void Heap::add(Node &node) {
@@ -86,14 +103,10 @@ void Heap::build() {
     }
 }
 
-void Heap::display() {
-    for(auto &node : heap_arr) {
-        cout << node.value << endl;
-    }
-    cout << endl;
-}
-
 Node Heap::top() {
+    // To ensure working correctly, checking heap size is needed
+    // However, heap serves merging files algorithm which check size before
+    // so return root of heap directly
     return heap_arr[0];
 }
 
@@ -103,8 +116,39 @@ void Heap::replaceTop(Node node) {
 }
 
 void Heap::pop() {
-    heap_arr[0].value = STR_MAX;
-    heapify(0);
+    if(heap_size <= 0) {
+        return ;
+    }
+    heap_arr[0] = heap_arr[--heap_size];
+    heap_arr.pop_back();
+    if(heap_size > 0) {
+        shiftDown(0);
+    }
+}
+
+void Heap::shiftDown(int index) {
+    int left_ = left(index);
+    int right_ = right(index);
+    int min;
+
+    if(right_ >= heap_size) {
+        if(left_ >= heap_size) {
+            return ;
+        } else {
+            min = left_;
+        }
+    } else {
+        if(heap_arr[left_].value > heap_arr[right_].value) {
+            min = right_;
+        } else {
+            min = left_;
+        }
+    }
+
+    if(heap_arr[index].value > heap_arr[min].value) {
+        swap(heap_arr[index], heap_arr[min]);
+        shiftDown(min);
+    }
 }
 
 // ========================================
@@ -121,6 +165,7 @@ bool compare(const string &str_1, const string &str_2) {
 
 /**
  * Sort vector of strings and save it to temporary file.
+ * Close file when done
  * @param outFile   temporary file.
  * @param lines     vector of strings.
  */
@@ -137,23 +182,24 @@ void sortAndSave(std::ofstream &outFile, vector<string> &lines) {
 
 /**
  * Segment main file into temporary files, each file is limited by a maximum of bytes.
- * @param path_file_in      directory path of main file.
+ * Close file when done
+ * @param inFile            input file.
  * @param minHeap           Min Heap
  * @param memoryLimit       maximum of bytes.
  */
-void segmentFileToRuns(const string path_file_in,
+void segmentFileToRuns(ifstream &inFile,
                        Heap &minHeap,
                        const unsigned int memoryLimit)
 {
-    ifstream inFile(path_file_in.c_str());
-
     vector<string> lines;
 
-    string line;
+    string  line,
+            out_file;
+
     ofstream tempFile;
 
     int numOfReadingBytes = 0,
-            numOfTempFiles = 0;
+        numOfTempFiles = 0;
 
     Node newNode;
 
@@ -164,7 +210,7 @@ void segmentFileToRuns(const string path_file_in,
         numOfReadingBytes += line.size();
 
         if(numOfReadingBytes >= memoryLimit) {
-            string out_file = TEMP_DIR + "tmp-" + to_string(numOfTempFiles) + ".txt";
+            out_file = TEMP_DIR + PREFIX_ + to_string(numOfTempFiles) + EXT;
 
             tempFile.open(out_file.c_str());
             sortAndSave(tempFile, lines);
@@ -187,7 +233,7 @@ void segmentFileToRuns(const string path_file_in,
 
 
     if(numOfReadingBytes != 0) {
-        string out_file = TEMP_DIR + "tmp-" + to_string(numOfTempFiles) + ".txt";
+        out_file = TEMP_DIR + PREFIX_ + to_string(numOfTempFiles) + EXT;
         tempFile.open(out_file.c_str());
         sortAndSave(tempFile, lines);
         newNode.value = lines[0];
@@ -200,46 +246,42 @@ void segmentFileToRuns(const string path_file_in,
 
 /**
  * Merge temporary files into one
+ * Close file when done
  * @param outFile   output file
  * @param minHeap   Min Heap
  */
-void mergeFilesToFile(
-        ofstream &outFile,
-        Heap &minHeap)
+void mergeFilesToFile(ofstream &outFile, Heap &minHeap)
 {
     int numOfTempFiles = minHeap.size();
-    string newLine;
+
+    string  newLine,
+            out_file;
+
     auto * tempFiles = new ifstream[numOfTempFiles];
+
     vector<string> a;
 
     // Initialize ready temporary files to read.
     for(int i = 0; i < numOfTempFiles; i++) {
-        string out_file = TEMP_DIR + "tmp-" + to_string(i) + ".txt";
+        out_file = TEMP_DIR + PREFIX_ + to_string(i) + EXT;
         tempFiles[i].open(out_file.c_str());
     }
 
-    int loop = 0;
-
     // Start merging
 
-    while(loop < numOfTempFiles) {
+    while(minHeap.size() > 0) {
         Node entry = minHeap.top();
 
-
-        string line = entry.value;
+        outFile << entry.value << '\n';
         ifstream * inTempFile =  &tempFiles[entry.index_file];
-        outFile << line << '\n';
 
         // Read next line and push it into min heap to retrieve min line later.
         // If file is EOF, pop min heap to retrieve next min line in heap later.
-        if(getline(*inTempFile, newLine)) {
-            entry.value = newLine;
+        if(getline(*inTempFile, entry.value)) {
+            minHeap.replaceTop(entry);
         } else {
-            entry.value = "\255";
-            loop++;
+            minHeap.pop();
         }
-
-        minHeap.replaceTop(entry);
     }
 
 
@@ -313,7 +355,7 @@ void prepare()
     const int dir_err = mkdir(TEMP_DIR.c_str(), 0777);
     if (-1 == dir_err)
     {
-        printf("Error creating directory!n");
+        cout << "Error creating directory!" << endl;
         exit(1);
     }
 }
@@ -324,16 +366,30 @@ void prepare()
  * @param path_file_out     directory path of file output.
  * @param memoryLimit       maximum of bytes.
  */
-void externalSorting(const string path_file_in,
-                     const string path_file_out,
+void externalSorting(const char * path_file_in,
+                     const char * path_file_out,
                      const unsigned int memoryLimit)
 {
+    prepare();
 
     Heap minHeap;
-    prepare();
-    ofstream outFile(path_file_out.c_str(), ofstream::out);
+    ifstream inFile(path_file_in);
 
-    segmentFileToRuns(path_file_in, minHeap, memoryLimit);
+    if(!inFile.is_open()) {
+        cout << "Can't open reading file: " << path_file_in << endl;
+        exit(-1);
+    }
+
+    cout << "Segmenting file ..." << endl;
+    segmentFileToRuns(inFile, minHeap, memoryLimit);
+
+    ofstream outFile(path_file_out);
+    if(!outFile.is_open()) {
+        cout << "Can't open writing file: " << path_file_in << endl;
+        exit(-1);
+    }
+
+    cout << "Merging files ..." << endl;
     mergeFilesToFile(outFile, minHeap);
 
     removeDir(TEMP_DIR.c_str());
@@ -344,10 +400,10 @@ void externalSorting(const string path_file_in,
  * @param path_file_in      directory path of file input.
  * @param path_file_out     directory path of file output.
  */
-void sortDirectly(const string path_file_in,
-                  const string path_file_out) {
+void sortDirectly(const char * path_file_in,
+                  const char * path_file_out) {
 
-    ifstream inFile(path_file_in.c_str());
+    ifstream inFile(path_file_in);
     vector<string> lines;
     string line;
 
@@ -355,7 +411,7 @@ void sortDirectly(const string path_file_in,
         lines.push_back(line);
     }
     inFile.close();
-    ofstream outFile(path_file_out.c_str());
+    ofstream outFile(path_file_out);
     sortAndSave(outFile, lines);
 }
 
@@ -365,7 +421,7 @@ int main(int argc, char* argv[]) {
     if (argc < 4) {
         cout << "Missing parameters" << endl;
         cout << "Usage:" << endl;
-        cout << "coccoc [input file name] [output file name] [memory limit]" << endl;
+        cout << "coccoc [input file name] [output file name] [memory limit in bytes]" << endl;
         return -1;
     }
 
@@ -376,15 +432,18 @@ int main(int argc, char* argv[]) {
     // ========================================
 
     clock_t begin = clock();
-
-    // ============ Begin sorting ============
     size_t file_size = getFilesize(path_file_in);
 
+    // ============ Begin sorting ============
 
-    if (file_size < memoryLimit) {
-        sortDirectly(path_file_in, path_file_out);
+    if(file_size == 0 ) {
+        cout << "Data emtpy!" << endl;
+    } else if (file_size <= memoryLimit) {
+        cout << "--- Start sorting directly in memory ---" << endl;
+        sortDirectly(path_file_in.c_str(), path_file_out.c_str());
     } else {
-        externalSorting(path_file_in, path_file_out, memoryLimit);
+        cout << "--- Start sorting by external sorting ---" << endl;
+        externalSorting(path_file_in.c_str(), path_file_out.c_str(), memoryLimit);
     }
 
     // ========================================
